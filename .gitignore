@@ -1,0 +1,9 @@
+# 编译产物与运行期数据（均可重新生成）
+dist/
+logs/
+state/
+test/.run/
+
+# 临时文件
+*.user
+*.tmp
