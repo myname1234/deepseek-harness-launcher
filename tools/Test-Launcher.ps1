@@ -80,10 +80,10 @@ function Get-FreePort {
 }
 
 function Write-FixtureConfig {
-    param([int]$Port, [string]$RemoteUrl, [string]$Path, [string]$OpenTarget = 'browser', [string]$AppCommand = '', [string]$AppWindowTitle = '')
+    param([int]$Port, [string]$RemoteUrl, [string]$Path, [string]$OpenTarget = 'browser', [string]$AppCommand = '', [string]$AppWindowTitle = '', [string]$HarnessDir = 'work')
     $ini = @"
 # 端到端测试夹具配置（由 tools\Test-Launcher.ps1 生成）
-harnessDir = work
+harnessDir = $HarnessDir
 remoteName = origin
 remoteUrl = $RemoteUrl
 tagPrefix = dsh-v
@@ -107,8 +107,13 @@ echoOutput = true
 }
 
 function Start-Launcher {
-    param([string]$ConfigPath)
-    return Start-Process -FilePath $exe -ArgumentList @('--config', "`"$ConfigPath`"", '--yes', '--allow-multiple') -PassThru
+    param([string]$ConfigPath, [string]$HarnessPath = '')
+    $arguments = @('--config', "`"$ConfigPath`"", '--yes', '--allow-multiple')
+    if ($HarnessPath) {
+        $arguments += @('--harness', "`"$HarnessPath`"")
+    }
+
+    return Start-Process -FilePath $exe -ArgumentList $arguments -PassThru
 }
 
 function Wait-LauncherReady {
@@ -399,6 +404,31 @@ if ($windowPidB) {
 Assert-True '[B] 启动器退出后界面应用窗口被关闭' $windowGone ("pid=" + $windowPidB)
 $logAfterClose = if (Test-Path $logPath) { Get-Content -LiteralPath $logPath -Raw -Encoding UTF8 } else { '' }
 Assert-True '[B] 日志记录了关闭界面应用窗口' ($logAfterClose -match '已请求关闭界面应用窗口')
+
+# ---------- 阶段 C：用 --harness 指定另一个源码目录 ----------
+
+Write-Host '=== 4. 阶段 C：配置里的目录无效，用 --harness 指向夹具仓库 ==='
+Remove-Item -LiteralPath $stubPidPath -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
+$portC = Get-FreePort
+# 故意写一个不存在的 harnessDir：不传 --harness 时启动器应当失败。
+Write-FixtureConfig -Port $portC -RemoteUrl $remoteUrl -Path $configPath -OpenTarget 'browser' -AppCommand '' -HarnessDir '..\does-not-exist'
+$processC = Start-Launcher -ConfigPath $configPath -HarnessPath $work
+$resultC = Wait-LauncherReady -Process $processC -LogPath $logPath -StubPidPath $stubPidPath -Seconds $TimeoutSeconds
+
+Write-Host '--- 阶段 C 断言 ---'
+Assert-True '[C] 启动器未被意外关闭' (-not $resultC.EarlyExit) ("exit=" + $resultC.ExitCode)
+Assert-True '[C] 日志确认使用了 --harness 指定的目录' ($resultC.LogText -match ([regex]::Escape('--harness 指定源码目录：' + $work)))
+Assert-True '[C] 实际使用的源码目录是夹具仓库' ($resultC.LogText -match ([regex]::Escape('源码目录：' + $work)))
+Assert-True '[C] 配置里的无效目录被忽略（未报目录不存在）' (-not ($resultC.LogText -match '源码目录不存在'))
+Assert-True '[C] 服务已在夹具仓库上就绪' ($resultC.LogText -match ([regex]::Escape("http://127.0.0.1:$portC/?token=stub-token-123456")))
+
+Write-Host '--- 阶段 C 收尾 ---'
+$closedC = Stop-Launcher -Process $processC
+Assert-True '[C] 关闭窗口后启动器退出' $closedC
+if (-not $closedC) { $processC.Kill() }
+Start-Sleep -Seconds 2
+Assert-True '[C] 夹具服务被一并结束' ($null -eq (Get-Process -Id ([int]$resultC.StubPid) -ErrorAction SilentlyContinue))
 
 if (-not $KeepFixture) {
     Remove-Item -LiteralPath $run -Recurse -Force -ErrorAction SilentlyContinue

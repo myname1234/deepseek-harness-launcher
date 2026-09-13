@@ -27,6 +27,27 @@ namespace DshLauncher
             AppConfig config = AppConfig.Load(exeDirectory, commandLine.ConfigPath);
             Log log = new Log(config.LogDirectory, commandLine.Console);
 
+            if (!string.IsNullOrEmpty(commandLine.HarnessPath))
+            {
+                string detail;
+                TargetVerdict verdict = HarnessTargets.Validate(commandLine.HarnessPath, out detail);
+                if (verdict == TargetVerdict.Missing)
+                {
+                    ConsoleBridge.Init();
+                    ConsoleBridge.WriteLine("--harness " + detail);
+                    log.Error("--harness " + detail);
+                    return 2;
+                }
+
+                if (verdict == TargetVerdict.NotHarness)
+                {
+                    log.Warn("--harness " + detail + "（仍然使用它）");
+                }
+
+                config.SetHarnessDir(commandLine.HarnessPath);
+                log.Info("--harness 指定源码目录：" + config.HarnessDir);
+            }
+
             if (commandLine.SelfTest)
             {
                 ConsoleBridge.Init();
@@ -37,6 +58,12 @@ namespace DshLauncher
             {
                 ConsoleBridge.Init();
                 return Diagnose.Run(config, log, true);
+            }
+
+            if (commandLine.UiCheck)
+            {
+                ConsoleBridge.Init();
+                return UiCheck.Run(config, log);
             }
 
             bool createdNew;
@@ -94,6 +121,8 @@ namespace DshLauncher
             internal bool AssumeYes;
             internal bool ForceBuild;
             internal bool AllowMultiple;
+            internal bool UiCheck;
+            internal string HarnessPath;
             internal string ConfigPath;
 
             internal static CommandLine Parse(string[] args)
@@ -138,6 +167,14 @@ namespace DshLauncher
                     {
                         parsed.AllowMultiple = true;
                     }
+                    else if (string.Equals(arg, "--ui-check", StringComparison.OrdinalIgnoreCase))
+                    {
+                        parsed.UiCheck = true;
+                    }
+                    else if (string.Equals(arg, "--harness", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                    {
+                        parsed.HarnessPath = args[++i];
+                    }
                     else if (string.Equals(arg, "--config", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                     {
                         parsed.ConfigPath = args[++i];
@@ -145,7 +182,7 @@ namespace DshLauncher
                 }
 
                 // 诊断与自检是命令行模式：默认把日志同时回显到控制台。
-                if (parsed.Diagnose || parsed.SelfTest)
+                if (parsed.Diagnose || parsed.SelfTest || parsed.UiCheck)
                 {
                     parsed.Console = true;
                 }
@@ -166,6 +203,8 @@ namespace DshLauncher
                 + "  DeepSeekHarnessLauncher.exe --allow-multiple 允许与已运行的启动器实例并存" + Environment.NewLine
                 + "  DeepSeekHarnessLauncher.exe --diagnose     只读环境诊断（不改动源码目录）" + Environment.NewLine
                 + "  DeepSeekHarnessLauncher.exe --self-test     运行内置逻辑自检" + Environment.NewLine
+                + "  DeepSeekHarnessLauncher.exe --ui-check      界面布局自检（不显示窗口、不启动流程）" + Environment.NewLine
+                + "  DeepSeekHarnessLauncher.exe --harness <路径> 指定本次使用的源码目录（默认用配置里的）" + Environment.NewLine
                 + "  DeepSeekHarnessLauncher.exe --config <路径> 指定 launcher.config.ini" + Environment.NewLine
                 + Environment.NewLine
                 + "启动流程：检查远端 tag → 提示是否更新 → pnpm run build（已是最新且已有产物时跳过）→ pnpm dsh web" + Environment.NewLine;

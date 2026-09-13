@@ -15,7 +15,12 @@ namespace DshLauncher
 
         internal string ConfigPath;
         internal string LauncherRoot;
+
+        /// <summary>本次启动实际使用的源码目录（界面里可切换）。</summary>
         internal string HarnessDir;
+
+        /// <summary>配置解析出的默认源码目录，用于「恢复默认」。</summary>
+        internal string DefaultHarnessDir;
         internal string RemoteName = "origin";
         internal string RemoteUrl = "https://github.com/deepseek-ai/deepseek-harness.git";
         internal string TagPrefix = "dsh-v";
@@ -42,6 +47,9 @@ namespace DshLauncher
 
         /// <summary>可选的界面窗口标题关键字；留空表示只关闭本次启动新打开的那个窗口。</summary>
         internal string AppWindowTitle = string.Empty;
+
+        /// <summary>界面主题：auto（跟随 Windows 应用模式）/ dark / light。</summary>
+        internal string Theme = "auto";
 
         internal readonly List<string> Warnings = new List<string>();
 
@@ -279,6 +287,7 @@ namespace DshLauncher
                     case "appcommand": AppCommand = rawValue; break;
                     case "closeapponexit": CloseAppOnExit = ParseBool(key, value); break;
                     case "appwindowtitle": AppWindowTitle = value; break;
+                    case "theme": Theme = ParseTheme(value); break;
                     default:
                         Warnings.Add(string.Format("第 {0} 行是未知配置项：{1}", i + 1, key));
                         break;
@@ -297,6 +306,36 @@ namespace DshLauncher
             HarnessDir = Path.IsPathRooted(HarnessDir)
                 ? Path.GetFullPath(HarnessDir)
                 : Path.GetFullPath(Path.Combine(LauncherRoot, HarnessDir));
+            DefaultHarnessDir = HarnessDir;
+        }
+
+        /// <summary>
+        /// 切换本次启动使用的源码目录（界面下拉框、浏览按钮或 --harness 使用）。
+        /// 相对路径按启动器根目录解析；只影响本次运行，不写回配置文件。
+        /// </summary>
+        internal void SetHarnessDir(string path)
+        {
+            string value = path == null ? string.Empty : path.Trim().Trim('"');
+            if (value.Length == 0)
+            {
+                return;
+            }
+
+            HarnessDir = Path.IsPathRooted(value)
+                ? Path.GetFullPath(value)
+                : Path.GetFullPath(Path.Combine(LauncherRoot, value));
+        }
+
+        /// <summary>当前目标是否就是配置里的默认目录。</summary>
+        internal bool IsDefaultHarnessDir
+        {
+            get
+            {
+                return string.Equals(
+                    HarnessTargets.Normalize(HarnessDir),
+                    HarnessTargets.Normalize(DefaultHarnessDir),
+                    StringComparison.OrdinalIgnoreCase);
+            }
         }
 
         private int ParseInt(string key, string value)
@@ -312,8 +351,19 @@ namespace DshLauncher
             return 0;
         }
 
-        private string ParseOpenTarget(string value)
+        private string ParseTheme(string value)
         {
+            string lowered = value.ToLowerInvariant();
+            if (lowered == "auto" || lowered == "dark" || lowered == "light")
+            {
+                return lowered;
+            }
+
+            Warnings.Add(string.Format("配置项 theme 只能是 auto / dark / light：{0}", value));
+            return "auto";
+        }
+
+        private string ParseOpenTarget(string value)        {
             string lowered = value.ToLowerInvariant();
             if (lowered == "browser" || lowered == "app" || lowered == "none")
             {

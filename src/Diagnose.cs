@@ -46,6 +46,11 @@ namespace DshLauncher
             }
 
             emit(line);
+            line = "默认源码目录：" + config.DefaultHarnessDir;
+            log.Info(line); emit(line);
+            System.Collections.Generic.List<string> recent = HarnessTargets.LoadRecent(config);
+            line = "最近使用：" + (recent.Count == 0 ? "(无)" : string.Join(" | ", recent.ToArray()));
+            log.Info(line); emit(line);
             line = "远端：" + config.RemoteName + " / " + config.RemoteUrl;
             log.Info(line); emit(line);
             line = "tag 前缀：" + config.TagPrefix;

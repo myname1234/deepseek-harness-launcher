@@ -153,6 +153,46 @@ namespace DshLauncher
             Check("关键字为空时不匹配任何标题",
                 !WindowCloser.MatchesAppWindowTitle("DSH Local Build", string.Empty));
 
+            log.Info("=== 自检：目标源码目录 ===");
+            string verdictDetail;
+            Check("不存在的目录判为不可用",
+                HarnessTargets.Validate(@"Z:\definitely\missing\dsh", out verdictDetail) == TargetVerdict.Missing);
+            Check("空路径判为不可用",
+                HarnessTargets.Validate("   ", out verdictDetail) == TargetVerdict.Missing);
+            Check("非 harness 目录需要确认",
+                HarnessTargets.Validate(System.IO.Path.GetTempPath(), out verdictDetail) != TargetVerdict.Ok);
+            System.Collections.Generic.List<string> recent = HarnessTargets.ParseRecent(@"C:\a\dsh|D:\b\dsh|C:\a\dsh||");
+            Check("最近使用解析去重且保持顺序",
+                recent.Count == 2 && recent[0] == "C:\\a\\dsh" && recent[1] == "D:\\b\\dsh");
+            Check("最近使用可回写成标签",
+                HarnessTargets.FormatRecent(recent) == "C:\\a\\dsh|D:\\b\\dsh");
+            System.Collections.Generic.List<string> added = HarnessTargets.AddRecent(recent, @"E:\c\dsh", "C:\\a\\dsh");
+            Check("新目标排在最前且不含默认目录",
+                added.Count == 2 && added[0] == "E:\\c\\dsh" && added[1] == "D:\\b\\dsh");
+            Check("重复选择同一目录不会产生重复项",
+                HarnessTargets.AddRecent(added, @"E:\c\dsh", "C:\\a\\dsh").Count == 2);
+            Check("过长的路径被压缩显示",
+                HarnessTargets.Shorten(@"C:\very\long\path\to\a\harness\checkout\with\many\segments", 20).Length == 20);
+            string tempRoot = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "dsh-launcher-selftest-" + Guid.NewGuid().ToString("N"));
+            AppConfig store = new AppConfig();
+            store.LauncherRoot = tempRoot;
+            store.HarnessDir = tempRoot;
+            store.DefaultHarnessDir = tempRoot;
+            HarnessTargets.SaveRecent(store, added);
+            System.Collections.Generic.List<string> reloaded = HarnessTargets.LoadRecent(store);
+            Check("最近使用可写入并原样读回",
+                reloaded.Count == added.Count && reloaded[0] == added[0] && reloaded[1] == added[1]);
+            try
+            {
+                System.IO.Directory.Delete(tempRoot, true);
+            }
+            catch (System.IO.IOException)
+            {
+                // 临时目录清理失败不影响结论。
+            }
+            Check("相对路径按启动器根目录解析",
+                ResolveHarnessPath(@"C:\launcher", "..\\deepseek-harness") == "C:\\deepseek-harness");
+
             log.Info("=== 自检：配置解析 ===");
             AppConfig config = new AppConfig();
             config.LauncherRoot = "C:\\launcher";
@@ -237,6 +277,16 @@ namespace DshLauncher
             }
 
             return UpdatePolicy.Evaluate(state, remoteTags, "dsh-v", remoteAvailable ? null : "模拟网络失败");
+        }
+
+        private static string ResolveHarnessPath(string launcherRoot, string relative)
+        {
+            AppConfig config = new AppConfig();
+            config.LauncherRoot = launcherRoot;
+            config.HarnessDir = "x";
+            config.DefaultHarnessDir = "x";
+            config.SetHarnessDir(relative);
+            return config.HarnessDir;
         }
 
         private static RepoState MakeState(bool isRepository, bool dirty)

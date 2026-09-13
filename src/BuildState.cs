@@ -27,6 +27,7 @@ namespace DshLauncher
         /// <summary>启动器记录的最近一次成功构建。</summary>
         internal sealed class BuildRecord
         {
+            internal string HarnessDir;
             internal string Commit;
             internal string Branch;
             internal bool Dirty;
@@ -70,6 +71,7 @@ namespace DshLauncher
                     string value = line.Substring(separator + 1).Trim();
                     switch (key)
                     {
+                        case "harness": record.HarnessDir = value; break;
                         case "commit": record.Commit = value; break;
                         case "branch": record.Branch = value; break;
                         case "dirty": record.Dirty = value.Equals("true", StringComparison.OrdinalIgnoreCase); break;
@@ -98,6 +100,7 @@ namespace DshLauncher
                 Directory.CreateDirectory(config.StateDirectory);
                 StringBuilder builder = new StringBuilder();
                 builder.AppendLine("# DeepSeek Harness 启动器：最近一次成功构建，用于判断能否跳过 pnpm run build");
+                builder.AppendLine("harness = " + config.HarnessDir);
                 builder.AppendLine("commit = " + (state == null || state.HeadCommit == null ? string.Empty : state.HeadCommit));
                 builder.AppendLine("branch = " + (state == null || state.Branch == null ? string.Empty : state.Branch));
                 builder.AppendLine("dirty = " + (state != null && state.IsDirty ? "true" : "false"));
@@ -151,6 +154,14 @@ namespace DshLauncher
             }
 
             BuildRecord record = ReadRecord(config);
+            if (record != null && !string.IsNullOrEmpty(record.HarnessDir)
+                && !string.Equals(HarnessTargets.Normalize(record.HarnessDir), HarnessTargets.Normalize(config.HarnessDir), StringComparison.OrdinalIgnoreCase))
+            {
+                // 记录来自另一个源码目录：产物与当前目标无关，必须重新构建。
+                detail = "最近一次构建记录属于另一个源码目录（" + HarnessTargets.Shorten(record.HarnessDir, 60) + "）";
+                return false;
+            }
+
             if (record != null && !record.Dirty && CommitMatches(record.Commit, state.HeadCommit))
             {
                 detail = "启动器上次已为提交 " + Short(state.HeadCommit) + " 构建成功（" + record.Time + "）";

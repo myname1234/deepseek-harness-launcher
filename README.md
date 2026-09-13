@@ -38,6 +38,45 @@
 1. 向由它打开的界面应用窗口投递关闭消息（只关这一个窗口，绝不结束浏览器进程）；
 2. 用 `taskkill /T /F` 回收整棵 `cmd → pnpm → node` 进程树。
 
+## 界面
+
+外观取自 DSH Web 客户端的设计令牌（`packages/client/ui-theme` 的 `--dsw-alias-*` / `--dsw-static-*`）：平台底色 + 白色/深灰卡片层、三级文字颜色、圆角卡片与细边框、状态徽标（圆点 + 胶囊），主按钮用 deepseek 蓝强调色。
+
+- 主题跟随 Windows 的「应用模式」（与 DSH 网页的明暗一致），可用 `theme = auto | dark | light` 指定。
+- **紧凑**：默认窗口 940×620，头部按内容占高（默认约 120–133px），底部两行共 62px，其余都给日志区。
+- **文字不会被裁剪**：文字控件一律按内容自适应尺寸，长文本（阶段说明、源码路径、界面地址）自动换行并由所在行撑高；窗口缩到最小 660×430 时仍不裁剪。
+- **按钮自绘**：从普通 `Control` 派生（不是 `Button`——`ButtonBase` 会在自己的消息处理里再画一圈平面按钮描边，即使设了 `UserPaint` 也会在按钮周围留下深灰"阴影"）；常态/悬停/按下/禁用四色显式定义，并支持鼠标、空格/回车、焦点虚框与无障碍角色。
+- 日志区开启自动换行，长命令行不会横向被截断；日志按级别着色（命令=蓝、成功=绿、警告=琥珀、错误=红）。
+
+界面布局与配色由 `--ui-check` 自动验证（见「验证」）。
+
+## 目标源码目录
+
+默认使用 `launcher.config.ini` 里的 `harnessDir`（即 `..\deepseek-harness`）。界面底部有一个**目标目录选择器**（文件夹图标 + 目录名 + 灰色完整路径 + 折角箭头），点它弹出菜单 —— 交互与排版照 DSH 客户端的 workspace 选择器：
+
+```
+┌────────────────────────────────────┐
+│ 默认目录                            │   ← 分组标题（次要文字）
+│  📁 deepseek-harness  D:\...\dsh ✓ │   ← 图标 + 目录名 + 路径 + 当前项打勾
+│ 最近使用                            │
+│  📁 harness-a         E:\alt\...   │
+│ ────────────────────────────────── │   ← 细分隔线
+│  ＋ 浏览其他目录…                   │   ← 固定动作
+└────────────────────────────────────┘
+```
+
+- 菜单可用键盘操作：↑/↓ 移动、Enter 选中、Esc 关闭；点击别处自动收起。
+- 切换立即生效并记入「最近使用」（`state\harness-targets.ini`，最多 4 个，默认目录不入列表）。
+- 命令行方式：`--harness <路径>`（支持相对路径，脚本/快捷方式用）。
+
+规则与安全边界：
+
+- 切换只影响本次启动，**不会改写配置文件**。
+- 目录不存在 → 拒绝启动；存在但没有 `package.json`、或其中没有 `dsh` 脚本 → 提示确认后再用（`--harness` 形式只告警）。
+- 自动启动阶段不弹模态框：目录不可用时直接失败并在日志/状态里说明，窗口留着让你换目录。
+- **构建记录按目录区分**：换目录后不会误用另一个目录的构建产物（首次会重新构建一次）。
+- tag 检查、更新、构建、`dsh web` 全部针对所选目录执行。
+
 ## 界面打开方式（`openTarget`）
 
 `pnpm dsh web` 默认会打开系统默认浏览器的一个标签页。需要像桌面应用那样打开时，改 `launcher.config.ini`：
@@ -155,7 +194,9 @@ powershell -ExecutionPolicy Bypass -File uninstall.ps1
 | `--force-build` | 本次强制 `pnpm run build`（改过源码但已提交时用） |
 | `--allow-multiple` | 允许与已在运行的启动器实例并存（默认单实例） |
 | `--diagnose` / `--check` | 只读环境诊断，含构建判定预测，输出 `logs\diagnose-report.txt` |
-| `--self-test` | 运行内置逻辑自检（57 项断言） |
+| `--self-test` | 运行内置逻辑自检（65 项断言） |
+| `--ui-check` | 界面自检：尺寸/裁剪/重叠 + 按钮四态对比度 + 像素级黑边检查（不显示窗口、不启动流程） |
+| `--harness <路径>` | 指定本次使用的源码目录（默认用配置里的） |
 | `--config <路径>` | 指定另外一份 `launcher.config.ini`（可用来指向别的仓库） |
 | `--help` | 帮助 |
 
@@ -163,7 +204,7 @@ powershell -ExecutionPolicy Bypass -File uninstall.ps1
 
 | 键 | 默认值 | 说明 |
 | --- | --- | --- |
-| `harnessDir` | `..\deepseek-harness` | 源码目录，相对配置文件所在目录或绝对路径 |
+| `harnessDir` | `..\deepseek-harness` | 默认源码目录，相对配置文件所在目录或绝对路径（界面/`--harness` 可临时切换） |
 | `remoteName` | `origin` | 更新时使用的 remote |
 | `remoteUrl` | GitHub 地址 | remote 缺失时的兜底地址，也用于 GitHub API 兜底 |
 | `tagPrefix` | `dsh-v` | 只把以此开头的 tag 当版本 tag |
@@ -181,6 +222,7 @@ powershell -ExecutionPolicy Bypass -File uninstall.ps1
 | `appCommand` | 空 | `openTarget = app` 时执行的命令，支持 `{url}` 占位符 |
 | `closeAppOnExit` | `true` | 退出/停止时关闭由启动器打开的界面应用窗口 |
 | `appWindowTitle` | 空 | 可选的界面窗口标题关键字（应对"应用本来开着"的情况） |
+| `theme` | `auto` | 启动器窗口主题：`auto`（跟随 Windows 应用模式）/ `dark` / `light` |
 | `echoOutput` | `true` | 是否把子命令输出实时上行到界面 |
 
 ## 更新判定规则
@@ -202,12 +244,12 @@ powershell -ExecutionPolicy Bypass -File uninstall.ps1
 - 回答「否」或本就无需更新时，启动器**只读取**源码目录，不做任何写操作。
 - 回答「是」时只执行 `git fetch`、`git checkout --detach <tag>`（以及可选的 `pnpm install`），**不会** `git reset`、`git clean`，也不会覆盖本地未提交修改。
 - 更新前会把分支、提交、目标 tag 写入 `state\pre-update-state.txt`；若选择「暂存并更新」，改动保存在 `git stash` 中，可用 `git stash pop` 恢复。
-- `--diagnose` 与 `--self-test` 全程只读（仅 `ls-remote` 网络查询），可用于随时体检。
+- `--diagnose`、`--self-test` 与 `--ui-check` 全程只读（仅 `ls-remote` 网络查询），可用于随时体检。
 - 启动器自身只写 `deepseek-harness-launcher\` 下的 `logs\`、`state\` 与快捷方式。
 
 ## 验证
 
-三条可重复执行的验证，全部通过：
+四条可重复执行的验证，全部通过：
 
 ```powershell
 # 1) 逻辑自检：版本比较、tag 解析、更新判定、构建判定、界面打开方式、窗口识别、配置解析（65 项断言）
@@ -216,14 +258,30 @@ dist\DeepSeekHarnessLauncher.exe --self-test        # 退出码 0
 # 2) 只读诊断：工具链、仓库状态、远端 tag、端口、构建判定、界面应用与关闭设置、将要执行的命令
 dist\DeepSeekHarnessLauncher.exe --diagnose         # 退出码 0，报告见 logs\diagnose-report.txt
 
-# 3) 两阶段端到端回归（33 项断言）
+# 3) 界面自检：4 种尺寸 + 控件四态对比度 + 像素级黑边检查 + 菜单渲染（166 项检查）
+dist\DeepSeekHarnessLauncher.exe --ui-check         # 退出码 0，报告见 logs\ui-check-report.txt
+
+# 4) 三阶段端到端回归（40 项断言：更新构建 / 跳过构建+界面应用 / --harness 切换目录）
 powershell -ExecutionPolicy Bypass -File tools\Test-Launcher.ps1
 ```
 
-`tools\Test-Launcher.ps1` 在 `test\.run\` 下自建裸仓库 + 目标仓库 + 构建/服务桩程序 + 一个真实的窗口桩程序（现场用 csc 编译），两阶段验证：
+`--ui-check` 会构造窗口（不显示）并把界面文字换成**最长可能内容**，在 720×480 / 820×560 / 1000×700 / 1280×820 四种尺寸下逐项检查：
+
+- 每个可见文本控件的测量所需宽高都小于它实际占用的宽高（即文字不会被裁剪）；
+- 头部 / 日志区 / 底部互不重叠，日志区高度足够，头部与底部不会过高（紧凑度）；
+- 任何控件都不越出父容器；日志区开启自动换行；
+- **每个可交互控件（按钮、目标目录选择器）在常态/悬停/按下/禁用四种状态下的前景-背景对比度 ≥ 4.5:1**（WCAG AA），状态徽标同理 —— 这条专门防「控件上的字看不见」；
+- **把按钮渲染成位图后逐像素检查最外 2 像素边框**：只能是底色/边框色/父容器底色或它们之间的抗锯齿过渡，四角必须等于父容器底色 —— 这条专门防「按钮四周有黑边/阴影」；
+- 真实点击一次「清空」按钮，确认 Click 事件确实接到处理器（按钮已不是 `Button`，事件链路需要证明）；
+- 校验目标目录弹出菜单的结构（分组标题 / 默认 / 最近使用 / 浏览动作、当前项打勾）并把菜单渲染成位图逐像素比对配色。
+
+实测：浅色与深色主题下各 **166 项检查、0 项不成立**。
+
+`tools\Test-Launcher.ps1` 在 `test\.run\` 下自建裸仓库 + 目标仓库 + 构建/服务桩程序 + 一个真实的窗口桩程序（现场用 csc 编译），三阶段验证：
 
 - **阶段 A**（远端有新 tag）：发现更新 → 自动更新到 `dsh-v0.1.1`（分离头指针）→ 执行 `pnpm run build` → 桩服务就绪并解析出带 token 地址 → 构建记录指向检出后的提交 → 关闭窗口后进程树被回收。
 - **阶段 B**（已是最新，且 `openTarget = app`）：跳过 `pnpm run build` → 直接拉起服务 → web 命令带 `--no-open` → 界面应用桩收到带 token 的地址并打开一个真实窗口 → 启动器识别并记录该窗口 → **启动器退出后该窗口进程消失**；构建标记文件时间未变，证明构建脚本确实没有再次执行。
+- **阶段 C**：配置里写一个不存在的目录，再用 `--harness` 指向夹具仓库 → 启动器忽略无效默认值、按指定目录完成启动。
 
 测试不需要网络，不会访问 `deepseek-harness`，也不会关闭其它已在运行的启动器实例（以 `--allow-multiple` 并存）。
 
