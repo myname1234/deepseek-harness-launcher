@@ -331,6 +331,15 @@ namespace DshLauncher
 
         // ---------------- 目标源码目录 ----------------
 
+        /// <summary>启动器自身版本（取自程序集元数据，格式 major.minor.build）。</summary>
+        internal static string VersionText()
+        {
+            Version version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            return version == null
+                ? "0.0.0"
+                : string.Format(CultureInfo.InvariantCulture, "{0}.{1}.{2}", version.Major, version.Minor, version.Build);
+        }
+
         /// <summary>把当前配置的默认目录 / 当前目录 / 最近使用同步到选择器。</summary>
         private void RefreshTargets()
         {
@@ -501,7 +510,7 @@ namespace DshLauncher
 
         private void AnnounceEnvironment()
         {
-            _log.Info("DeepSeek Harness 启动器已启动。");
+            _log.Info("DeepSeek Harness 启动器 v" + VersionText() + " 已启动。");
             _log.Info("界面主题：" + (_theme.Dark ? "深色" : "浅色") + "（theme = " + _config.Theme + "）");
             _log.Info("配置文件：" + (_config.ConfigPath == null ? "(未找到，使用默认值)" : _config.ConfigPath));
             _log.Info("日志文件：" + (_log.FilePath == null ? "(不可写)" : _log.FilePath));
@@ -720,7 +729,7 @@ namespace DshLauncher
             _startButton.Enabled = !running;
             _stopButton.Enabled = running;
             _diagnoseButton.Enabled = !running && !_diagnosing;
-            Text = "DeepSeek Harness 启动器 — " + StateText(state);
+            Text = "DeepSeek Harness 启动器 v" + VersionText() + " — " + StateText(state);
             UpdateWrapWidths();
         }
 
